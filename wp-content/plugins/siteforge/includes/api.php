@@ -4,12 +4,19 @@ defined('ABSPATH') || exit;
 add_action('rest_api_init', 'sf_register_routes');
 function sf_register_routes() {
     register_rest_route('siteforge/v1', '/pages', [
-        'methods'             => 'GET',
-        'callback'            => 'sf_get_pages',
-        'permission_callback' => '__return_true',
+        [
+            'methods'             => 'GET',
+            'callback'            => 'sf_get_pages',
+            'permission_callback' => '__return_true',
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'sf_create_page',
+            'permission_callback' => function() { return current_user_can('edit_posts'); },
+        ],
     ]);
 
-    register_rest_route('siteforge/v1', '/page/(?P<id>\d+)', [
+    register_rest_route('siteforge/v1', '/pages/(?P<id>\d+)', [
         [
             'methods'             => 'GET',
             'callback'            => 'sf_get_page',
@@ -20,18 +27,11 @@ function sf_register_routes() {
             'callback'            => 'sf_save_page',
             'permission_callback' => function() { return current_user_can('edit_posts'); },
         ],
-    ]);
-
-    register_rest_route('siteforge/v1', '/page', [
-        'methods'             => 'POST',
-        'callback'            => 'sf_create_page',
-        'permission_callback' => function() { return current_user_can('edit_posts'); },
-    ]);
-
-    register_rest_route('siteforge/v1', '/page/(?P<id>\d+)/delete', [
-        'methods'             => 'POST',
-        'callback'            => 'sf_delete_page',
-        'permission_callback' => function() { return current_user_can('delete_posts'); },
+        [
+            'methods'             => 'DELETE',
+            'callback'            => 'sf_delete_page',
+            'permission_callback' => function() { return current_user_can('delete_posts'); },
+        ],
     ]);
 
     register_rest_route('siteforge/v1', '/settings', [
@@ -72,7 +72,7 @@ function sf_format_page($post) {
 }
 
 function sf_save_page($req) {
-    $id = $req['id'];
+    $id = intval($req['id']);
     $body = $req->get_json_params();
 
     if (isset($body['title'])) wp_update_post(['ID' => $id, 'post_title' => sanitize_text_field($body['title'])]);
@@ -98,9 +98,10 @@ function sf_create_page($req) {
 }
 
 function sf_delete_page($req) {
-    $post = get_post($req['id']);
+    $id = intval($req['id']);
+    $post = get_post($id);
     if (!$post || $post->post_type !== 'sf_page') return new WP_Error('not_found', 'Page not found', ['status' => 404]);
-    wp_delete_post($req['id'], true);
+    wp_delete_post($id, true);
     return ['success' => true];
 }
 
@@ -108,15 +109,16 @@ function sf_get_settings() {
     return [
         'site_name'    => get_option('sf_site_name', get_bloginfo('name')),
         'primary_color'=> get_option('sf_primary_color', '#6366f1'),
-        'font'         => get_option('sf_font', 'Inter'),
+        'default_font' => get_option('sf_font', 'Inter'),
         'homepage'     => get_option('sf_homepage', 0),
     ];
 }
 
 function sf_save_settings($req) {
     $body = $req->get_json_params();
-    foreach (['site_name', 'primary_color', 'font', 'homepage'] as $key) {
-        if (isset($body[$key])) update_option('sf_' . $key, sanitize_text_field($body[$key]));
+    $map = ['site_name'=>'sf_site_name','primary_color'=>'sf_primary_color','default_font'=>'sf_font','homepage'=>'sf_homepage'];
+    foreach ($map as $key => $opt) {
+        if (isset($body[$key])) update_option($opt, sanitize_text_field($body[$key]));
     }
     return sf_get_settings();
 }
